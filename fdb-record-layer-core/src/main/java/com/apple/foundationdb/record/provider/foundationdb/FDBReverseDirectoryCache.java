@@ -306,11 +306,37 @@ public class FDBReverseDirectoryCache {
         String cachedString = context.getDatabase().getReverseDirectoryInMemoryCache().getIfPresent(scope.wrap(pathValue));
         if (cachedString != null) {
             if (!cachedString.equals(pathString)) {
-                throw new RecordCoreException("Provided value for path key does not match existing value in reverse directory layer in-memory cache")
-                        .addLogInfo(LogMessageKeys.RESOLVER, scope)
-                        .addLogInfo(LogMessageKeys.RESOLVER_PATH, pathString)
-                        .addLogInfo(LogMessageKeys.RESOLVER_KEY, pathValue)
-                        .addLogInfo("cached_key", cachedString);
+                // We found a value in the in-memory cache that doesn't match what someone is trying to shove into us!
+                // Let's verify who is right here. Note that this lookup is done in the context of a totally separate
+                // new transaction
+                return snapshotRead(context, scope, pathValue).thenCompose(readInTransaction -> {
+                    final String inTransactionDetail;
+                    if (readInTransaction == null) {
+                        inTransactionDetail = "Value does not exist in reverse directory";
+                    } else if (readInTransaction.equals(cachedString)) {
+                        inTransactionDetail = "Value in cache matches reverse directory";
+                    } else {
+                        inTransactionDetail = "Value in cache is incorrect";
+                    }
+
+                    return snapshotRead(context.getDatabase().openContext(), scope, pathValue).thenApply(readValue -> {
+                        final String detail;
+                        if (readValue == null) {
+                            detail = "Value does not exist in reverse directory";
+                        } else if (readValue.equals(cachedString)) {
+                            detail = "Value in cache matches reverse directory";
+                        } else {
+                            detail = "Value in cache is incorrect";
+                        }
+
+                        throw new RecordCoreException("Provided value for path key does not match existing value in reverse directory layer in-memory cache")
+                                .addLogInfo(LogMessageKeys.RESOLVER, scope)
+                                .addLogInfo(LogMessageKeys.RESOLVER_PATH, pathString)
+                                .addLogInfo(LogMessageKeys.RESOLVER_KEY, pathValue)
+                                .addLogInfo(LogMessageKeys.DESCRIPTION, detail)
+                                .addLogInfo("in_transaction", inTransactionDetail);
+                    });
+                });
             }
             if (LOGGER.isDebugEnabled()) {
                 LOGGER.debug("In-memory cache contains '" + pathString + "' -> '" + pathValue + "' mapping. No need to put");
@@ -320,6 +346,13 @@ public class FDBReverseDirectoryCache {
 
         return getReverseCacheSubspace(scope)
                 .thenCompose(subspace -> putToSubspace(context, subspace, scopedPathString, pathValue));
+    }
+
+
+    private CompletableFuture<String> snapshotRead(@Nonnull FDBRecordContext context, @Nonnull LocatableResolver scope, Long value) {
+        return getReverseCacheSubspace(scope).thenCompose(subspace ->
+                context.ensureActive().snapshot().get(subspace.pack(value)).thenApply(readBytes ->
+                        readBytes == null ? null : Tuple.fromBytes(readBytes).getString(0)));
     }
 
     private CompletableFuture<Void> putToSubspace(@Nonnull FDBRecordContext context,
