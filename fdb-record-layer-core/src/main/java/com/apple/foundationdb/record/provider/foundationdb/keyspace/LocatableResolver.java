@@ -33,6 +33,7 @@ import com.apple.foundationdb.record.provider.foundationdb.FDBRecordContext;
 import com.apple.foundationdb.record.provider.foundationdb.FDBStoreTimer;
 import com.apple.foundationdb.subspace.Subspace;
 import com.apple.foundationdb.tuple.ByteArrayUtil2;
+import com.apple.foundationdb.util.LoggableKeysAndValuesImpl;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.cache.Cache;
 import com.google.protobuf.InvalidProtocolBufferException;
@@ -402,12 +403,15 @@ public abstract class LocatableResolver {
         Cache<ScopedValue<Long>, String> inMemoryReverseCache = database.getReverseDirectoryInMemoryCache();
         String cachedValue = inMemoryReverseCache.getIfPresent(wrap(value));
         if (cachedValue != null) {
+            LOGGER.debug("{}: REV-CACHE-HIT: {} -> {}", this, value, cachedValue);
             return CompletableFuture.completedFuture(cachedValue);
         }
+        LOGGER.debug("{}: REV-CACHE-MISS: {}", this, value);
 
         return readReverse(timer, value)
                 .thenApply(maybeRead ->
                         maybeRead.map(read -> {
+                            LOGGER.debug("{}: REV-CACHE-PUT: {} -> {}", this, value, read);
                             inMemoryReverseCache.put(wrap(value), read);
                             return read;
                         }).orElseThrow(() -> new NoSuchElementException("reverse lookup of " + wrap(value))));
@@ -417,10 +421,16 @@ public abstract class LocatableResolver {
                                                                @Nonnull ScopedValue<String> scopedName,
                                                                @Nonnull Cache<ScopedValue<String>, ResolverResult> directoryCache,
                                                                @Nonnull ResolverCreateHooks hooks) {
+        if (!scopedName.getScope().equals(this)) {
+            throw new RuntimeException("ARRRRRGH!");
+        }
+
         ResolverResult value = directoryCache.getIfPresent(scopedName);
         if (value != null) {
+            LOGGER.debug("{}: FWD-CACHE-HIT: {} -> {}", scopedName.getScope(), scopedName.getData(), value.getValue());
             return CompletableFuture.completedFuture(value);
         }
+        LOGGER.debug("{}: FWD-CACHE-MISS: {}", scopedName.getScope(), scopedName.getData());
 
         return context.instrument(
                 FDBStoreTimer.Events.DIRECTORY_READ,
@@ -429,6 +439,7 @@ public abstract class LocatableResolver {
                         LogMessageKeys.RESOLVER, this,
                         LogMessageKeys.RESOLVER_KEY, scopedName.getData())
         ).thenApply(fetched -> {
+            LOGGER.debug("{}: FWD-CACHE-PUT: {} -> {}", scopedName.getScope(), scopedName.getData(), fetched.getValue());
             directoryCache.put(scopedName, fetched);
             return fetched;
         });

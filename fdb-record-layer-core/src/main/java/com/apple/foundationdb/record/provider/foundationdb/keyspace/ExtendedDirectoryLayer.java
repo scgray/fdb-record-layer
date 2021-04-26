@@ -138,7 +138,8 @@ public class ExtendedDirectoryLayer extends LocatableResolver {
                         return result;
                     });
                 })
-                .thenCompose(result -> reverseCache.putIfNotExists(context, wrap(key), result.getValue()).thenApply(ignore -> result));
+                .thenCompose(result -> reverseCache.putIfNotExists(context, wrap(key), result.getValue(),
+                        "ExtendedDirectoryLayer:create").thenApply(ignore -> result));
     }
 
     @Override
@@ -155,7 +156,7 @@ public class ExtendedDirectoryLayer extends LocatableResolver {
                         return CompletableFuture.completedFuture(Optional.empty());
                     }
                     ResolverResult result = deserializeValue(bytes);
-                    return reverseCache.putIfNotExists(context, wrap(key), result.getValue())
+                    return reverseCache.putIfNotExists(context, wrap(key), result.getValue(), "ExtendedDirectoryLayer:read")
                             .thenApply(ignore -> Optional.of(result));
                 });
     }
@@ -198,7 +199,7 @@ public class ExtendedDirectoryLayer extends LocatableResolver {
                     hca.forceAllocate(key, value.getValue());
                     return null;
                 }).thenCompose(vignore ->
-                        context.getDatabase().getReverseDirectoryCache().putIfNotExists(context, wrap(key), value.getValue()));
+                        context.getDatabase().getReverseDirectoryCache().putIfNotExists(context, wrap(key), value.getValue(), "ExtendedDirectoryLayer::setMapping"));
             }
             return AsyncUtil.DONE;
         }).thenCompose(Function.identity());

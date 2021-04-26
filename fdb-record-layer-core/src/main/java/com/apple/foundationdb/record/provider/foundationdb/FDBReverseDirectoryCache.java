@@ -284,6 +284,12 @@ public class FDBReverseDirectoryCache {
                         }));
     }
 
+    public CompletableFuture<Void> putIfNotExists(@Nonnull FDBRecordContext context,
+                                                  @Nonnull ScopedValue<String> scopedPathString,
+                                                  @Nonnull Long pathValue) {
+        return putIfNotExists(context, scopedPathString, pathValue, "unknown");
+    }
+
     /**
      * Add a new entry to the reverse directory cache if it does not already exist. If an entry already exists
      * for the <code>pathString</code> provided, the value for the key in the RDC will be compared against the
@@ -294,17 +300,20 @@ public class FDBReverseDirectoryCache {
      * @param context the transaction context in which to do the operation
      * @param scopedPathString the name of the entry within the scoped of an FDB directory layer
      * @param pathValue the value of the entry that from that FDB directory layer
+     * @param why thing
      * @return a future that performs the action
      * @throws IllegalStateException if the <code>pathkey</code> provided already exists in the reverse directory
      *                               layer and the <code>pathValue</code> provided does not match that value
      */
     public CompletableFuture<Void> putIfNotExists(@Nonnull FDBRecordContext context,
                                                   @Nonnull ScopedValue<String> scopedPathString,
-                                                  @Nonnull Long pathValue) {
+                                                  @Nonnull Long pathValue,
+                                                  @Nonnull String why) {
         LocatableResolver scope = scopedPathString.getScope();
         String pathString = scopedPathString.getData();
         String cachedString = context.getDatabase().getReverseDirectoryInMemoryCache().getIfPresent(scope.wrap(pathValue));
         if (cachedString != null) {
+            LOGGER.debug("{}: REV-CACHE-HIT (PUT VALIDATE): {} -> {}", scope, pathValue, cachedString);
             if (!cachedString.equals(pathString)) {
                 // We found a value in the in-memory cache that doesn't match what someone is trying to shove into us!
                 // Let's verify who is right here. Note that this lookup is done in the context of a totally separate
@@ -334,15 +343,14 @@ public class FDBReverseDirectoryCache {
                                 .addLogInfo(LogMessageKeys.RESOLVER_PATH, pathString)
                                 .addLogInfo(LogMessageKeys.RESOLVER_KEY, pathValue)
                                 .addLogInfo(LogMessageKeys.DESCRIPTION, detail)
-                                .addLogInfo("in_transaction", inTransactionDetail);
+                                .addLogInfo("in_transaction", inTransactionDetail)
+                                .addLogInfo("why", why);
                     });
                 });
             }
-            if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug("In-memory cache contains '" + pathString + "' -> '" + pathValue + "' mapping. No need to put");
-            }
             return AsyncUtil.DONE;
         }
+        LOGGER.debug("{}: REV-CACHE-MISS (PUT VALIDATE): {}", scope, pathValue);
 
         return getReverseCacheSubspace(scope)
                 .thenCompose(subspace -> putToSubspace(context, subspace, scopedPathString, pathValue));

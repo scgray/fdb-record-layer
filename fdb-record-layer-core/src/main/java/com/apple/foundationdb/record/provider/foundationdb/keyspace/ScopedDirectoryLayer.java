@@ -127,7 +127,7 @@ public class ScopedDirectoryLayer extends LocatableResolver {
                 .thenCompose(directoryLayer ->
                         directoryLayer.create(context.ensureActive(), Collections.singletonList(key))
                                 .thenApply(serializedValue -> deserializeValue(serializedValue.getKey()))
-                                .thenCompose(result -> reverseCache.putIfNotExists(context, wrap(key), result.getValue())
+                                .thenCompose(result -> reverseCache.putIfNotExists(context, wrap(key), result.getValue(), "create")
                                         .thenApply(ignore -> result)));
     }
 
@@ -144,7 +144,7 @@ public class ScopedDirectoryLayer extends LocatableResolver {
                         .thenCompose(directoryLayer ->
                                 directoryLayer.open(context.ensureActive(), Collections.singletonList(key))
                                         .thenApply(serializedValue -> deserializeValue(serializedValue.getKey()))
-                                        .thenCompose(result -> reverseCache.putIfNotExists(context, wrap(key), result.getValue()).thenApply(ignore -> result))
+                                        .thenCompose(result -> reverseCache.putIfNotExists(context, wrap(key), result.getValue(), "read").thenApply(ignore -> result))
                                         .thenApply(Optional::of)) :
                 CompletableFuture.completedFuture(Optional.empty()));
     }
