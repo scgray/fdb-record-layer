@@ -407,6 +407,8 @@ public class FDBStoreTimer extends StoreTimer implements EventKeeper {
         WAIT_EDIT_HEADER_USER_FIELD("wait to edit a header user field"),
         /** Wait to read a key from the FDB system keyspace. */
         WAIT_LOAD_SYSTEM_KEY("wait for reading a key from the FDB system keyspace"),
+        /** Wait to perform validation of resolver reverse directory mapping. */
+        WAIT_VALIDATE_RESOLVER("wait validating resolver"),
         ;
 
         private final String title;
